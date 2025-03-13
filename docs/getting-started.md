@@ -13,7 +13,13 @@ Let's begin by creating a new rust project
 cargo new --lib getting_started && cd getting_started
 ```
 
-In `Cargo.toml`, add a dependency on Butane:
+In `Cargo.toml`, add a dependency on Butane, either automatically using `cargo add`:
+
+``` shell
+cargo add butane
+```
+
+or manually in the file itself:
 
 ``` toml
 [dependencies]
@@ -26,37 +32,6 @@ PostgreSQL support at the end.
 A word on error-handling: for simplicity, this example unwraps errors
 to panic on failure. In a real program, you would of course handle
 your errors.
-
-## Initialization
-
-Butane provides a CLI to help with database connection and
-migration. It's optional -- it uses only public Butane APIs -- but it
-helps with common tasks. Let's install it and initialize our
-database. It's intended to be run from the same directory as the
-Cargo package (i.e. the one containing `Cargo.toml`).
-
-``` shell
-cargo install butane_cli
-butane init sqlite example.db
-```
-
-This will have created an `example.db` SQLite file in the current
-directory as well as a `.butane` subdirectory. Inside that
-subdirectory, we see a `connection.json` file containing our
-connection parameters.
-
-## Connection
-
-At this point, we can add a method (in our
-`lib.rs`) to establish a connection in code.
-
-``` rust
-use butane::db::{Connection, ConnectionSpec};
-
-pub fn establish_connection() -> Connection {
-    butane::db::connect(&ConnectionSpec::load(".butane/connection.json").unwrap()).unwrap()
-}
-```
 
 ## Models
 
@@ -88,14 +63,7 @@ The `#[model]` attribute does the heavy lifting here:
 
 1. It generates automatic `impl`s of [`butane::DataResult`] and
    [`butane::DataObject`].
-2. It adds an additional field `state: butane::ObjectState` used to
-   store internal Butane state information. In general, we can ignore
-   this field, but it must be initialized when the struct is
-   constructed and there may not be another field named `state`,
-   although it is acceptable to manually include the `state:
-   ObjectState` field in the struct definition to make its presence
-   more obvious (and rust-analyzer happier).
-3. It tells Butane that instances of this struct should be represented in the
+2. It tells Butane that instances of this struct should be represented in the
    database, recording migration info (more on this later).
 
 The `id` field is special -- it's the primary key. All models must
@@ -121,8 +89,6 @@ pub struct Post {
     pub blog: ForeignKey<Blog>,
     pub tags: Many<Tag>,
     pub byline: Option<String>,
-    // listed for clarity, generated automatically if omitted
-    state: butane::ObjectState,
 }
 impl Post {
     pub fn new(blog: &Blog, title: String, body: String) -> Self {
@@ -134,7 +100,6 @@ impl Post {
             blog: blog.into(),
             tags: Many::default(),
             byline: None,
-            state: ObjectState::default(),
         }
     }
 }
@@ -171,7 +136,51 @@ pub mod models;
 pub use models::{Blog, Post};
 ```
 
-Let's build our package now. If we look in the `.butane` directory,
+## Initialization
+
+Butane provides a CLI to help with database connection and
+migration. It's optional -- it uses only public Butane APIs -- but it
+helps with common tasks. Let's install it.
+
+``` shell
+cargo install butane_cli
+```
+
+Now that we've added a couple of models, we can initialize our database:
+
+``` shell
+butane init sqlite example.db
+```
+
+This will have created an `example.db` SQLite file in the current
+directory as well as a `.butane` subdirectory. Inside that
+subdirectory, we see a `connection.json` file containing our
+connection parameters.
+
+See below for how to connect to a PostgreSQL database.
+
+## Connection
+
+At this point, we can add a method (in our
+`lib.rs`) to establish a connection in code.
+
+``` rust
+use butane::db::{Connection, ConnectionSpec};
+
+pub fn establish_connection() -> Connection {
+    butane::db::connect(&ConnectionSpec::load(".butane/connection.json").unwrap()).unwrap()
+}
+```
+
+## Build
+
+Let's build our package now. 
+
+``` shell
+cargo build
+```
+
+If we look in the `.butane` directory,
 it has new items! There's a `migrations/current` subdirectory
 recording information about our models. These files are necessary for
 migrations to work, but their format is not part of Butane's public
@@ -526,6 +535,29 @@ butane backend add pg
 
 The file-system migrations will be updated to include PostgreSQL support, and `butane_migrations.rs`
 will also be updated to include the PostgreSQL migration scripts.
+
+To connect to a real, live PostgreSQL database, make sure you have the Postgres
+server running, pick a username and password, and a database name.
+
+``` shell
+sudo -u postgres createuser <username> -P
+```
+
+then enter your password to authorize the `sudo` and the password for the
+db user twice. To create the database itself,
+
+``` shell
+sudo -u postgres createdb <database-name> -O <username>
+```
+
+Now, if you'd like to start using the database you just created, do
+
+``` shell
+butane init pg postgres://<username>:<password>@localhost:5432/<database-name>
+```
+
+and then you can run the migration, and re-do the tutorial with a Postgres
+backend.
 
 ## Summary
 
